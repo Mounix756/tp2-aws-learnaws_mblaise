@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2012-10-17'
+AWSTemplateFormatVersion: '2010-09-09'
 Description: "TP AWS Lambda - Code Chargé depuis src/main.py"
 
 Parameters:
