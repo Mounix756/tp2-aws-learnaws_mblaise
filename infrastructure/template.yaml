@@ -53,9 +53,19 @@ Resources:
       Runtime: python3.12
       Code: ../src
 
+  # Permission pour permettre à S3 d'invoquer la fonction Lambda
+  LambdaPermissionForS3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaTrigger
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${Environment}-${BucketName}"
+
   # S3 Bucket pour stocker les fichiers
   S3Bucket:
     Type: AWS::S3::Bucket
+    DependsOn: LambdaPermissionForS3
     Properties:
       BucketName: !Sub "${Environment}-${BucketName}"
       NotificationConfiguration:
