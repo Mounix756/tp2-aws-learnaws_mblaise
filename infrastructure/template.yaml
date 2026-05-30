@@ -1,23 +1,35 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: "TP AWS Lambda - Code Chargé depuis src/main.py"
+
+Description: TP AWS Lambda - Déclenchement S3 avec contrôle des doublons
 
 Parameters:
   Environment:
     Type: String
-    Description: "Nom de l'environnement (dev, staging, prod)"
-    Default: "mblaise"
+    Description: Nom de l'environnement
+    Default: mblaise
 
   BucketName:
     Type: String
-    Description: "Nom du bucket S3 pour stocker le code de la fonction Lambda"
-    Default: "mblaise-s3-bucket-trigger-lambda"
+    Description: Nom du bucket S3
+    Default: s3-bucket-trigger-lambda
 
 Resources:
+
+  ImagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Environment}-s3-trigger-db"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: file_name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: file_name
+          KeyType: HASH
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      # RoleName: !Sub "${Environment}-LambdaExecutionRole"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -32,28 +44,34 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
       Policies:
-        - PolicyName: !Sub "${Environment}-LambdaS3AccessPolicy"
+        - PolicyName: !Sub "${Environment}-DynamoDBAccessPolicy"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:PutItem
                   - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
                 Resource:
-                  - arn:aws:dynamodb:*:*:table/s3-trigger-db
+                  - !GetAtt ImagesTable.Arn
 
-  # Fonction Lambda pour gérer les événements S3
   LambdaTrigger:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${Environment}-S3LambdaTrigger"
+      Runtime: python3.12
       Handler: main.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.12
       Code: ../src
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ImagesTable
 
-  # Permission pour permettre à S3 d'invoquer la fonction Lambda
   LambdaPermissionForS3:
     Type: AWS::Lambda::Permission
     Properties:
@@ -62,18 +80,30 @@ Resources:
       Principal: s3.amazonaws.com
       SourceArn: !Sub "arn:aws:s3:::${Environment}-${BucketName}"
 
-  # S3 Bucket pour stocker les fichiers
   S3Bucket:
     Type: AWS::S3::Bucket
-    DependsOn: LambdaPermissionForS3
+    DependsOn:
+      - LambdaPermissionForS3
     Properties:
       BucketName: !Sub "${Environment}-${BucketName}"
       NotificationConfiguration:
         LambdaConfigurations:
-          - Event: "s3:ObjectCreated:*"
-            # Filter:
-            #   S3Key:
-            #     Rules:
-            #       - Name: suffix
-            #         Value: ".txt"
+          - Event: s3:ObjectCreated:Put
             Function: !GetAtt LambdaTrigger.Arn
+
+Outputs:
+  BucketName:
+    Description: Nom du bucket S3
+    Value: !Ref S3Bucket
+
+  BucketArn:
+    Description: ARN du bucket S3
+    Value: !GetAtt S3Bucket.Arn
+
+  LambdaFunction:
+    Description: Nom de la fonction Lambda
+    Value: !Ref LambdaTrigger
+
+  DynamoDBTable:
+    Description: Nom de la table DynamoDB
+    Value: !Ref ImagesTable
